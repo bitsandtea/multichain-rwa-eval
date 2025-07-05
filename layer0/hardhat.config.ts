@@ -1,10 +1,13 @@
 import dotenv from "dotenv";
 dotenv.config();
 
-import "@nomicfoundation/hardhat-ethers";
+import "@layerzerolabs/toolbox-hardhat";
+
+import { EndpointId } from "@layerzerolabs/lz-definitions";
 import "@nomicfoundation/hardhat-network-helpers";
-import "@nomicfoundation/hardhat-toolbox";
 import "@nomicfoundation/hardhat-verify";
+import "@nomiclabs/hardhat-ethers";
+import "hardhat-deploy";
 
 const config = {
   paths: {
@@ -31,28 +34,35 @@ const config = {
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
     },
     baseSepolia: {
+      eid: EndpointId.BASESEP_V2_TESTNET,
       url: `https://base-sepolia.infura.io/v3/${process.env.INFURA_KEY}`,
       chainId: 84532,
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+      timeout: 60000,
+      gasPrice: 1000000000,
     },
     ethSepolia: {
+      eid: EndpointId.SEPOLIA_V2_TESTNET,
       url: `https://sepolia.infura.io/v3/${process.env.INFURA_KEY}`,
       chainId: 11155111,
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+      accounts: process.env.PRIVATE_KEY_ETHSEPOLIA
+        ? [process.env.PRIVATE_KEY_ETHSEPOLIA]
+        : [],
+      timeout: 60000,
+      gas: 2100000,
+      gasPrice: 8000000000,
     },
     polygonAmoy: {
+      eid: EndpointId.AMOY_V2_TESTNET,
       url: `https://polygon-amoy.infura.io/v3/${process.env.INFURA_KEY}`,
       chainId: 80002,
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+      accounts: process.env.PRIVATE_KEY_AMOY
+        ? [process.env.PRIVATE_KEY_AMOY]
+        : [],
     },
   },
   etherscan: {
-    apiKey: {
-      flowEVMTestnet: process.env.ETHERSCAN_API || "abc",
-      baseSepolia: process.env.ETHERSCAN_API || "abc",
-      ethSepolia: process.env.ETHERSCAN_API || "abc",
-      polygonAmoy: process.env.ETHERSCAN_API || "abc",
-    },
+    apiKey: process.env.ETHERSCAN_API || "abc",
     customChains: [
       {
         network: "flowEVMTestnet",

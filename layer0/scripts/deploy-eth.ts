@@ -1,6 +1,6 @@
 const { ethers, network } = require("hardhat");
-import { amoy, propertyData } from "../constants";
-import { verifyContract as verify } from "./verify/contract";
+import { ethSepolia, propertyData } from "../constants";
+import { verifyContract } from "./verify/contract";
 
 async function main() {
   console.log(`Deploying RWAToken to ${network.name}`);
@@ -18,7 +18,7 @@ async function main() {
     propertyData.default_risk_score,
     propertyData.location_score,
     owner,
-    ethers.utils.getAddress(amoy.endpoint),
+    ethers.utils.getAddress(ethSepolia.endpoint),
     owner,
   ];
 
@@ -30,13 +30,13 @@ async function main() {
 
   console.log("Setting peers...");
 
-  // Set peers for both Base Sepolia and Ethereum Sepolia
+  // Set peers for both Base Sepolia and Polygon Amoy
   const baseEndpointId = 40245; // Base Sepolia
-  const ethEndpointId = 40161; // Ethereum Sepolia
+  const amoyEndpointId = 40267; // Polygon Amoy
 
   // Note: Replace these addresses with actual deployed contract addresses
   const baseContractAddress = "0x0000000000000000000000000000000000000000"; // Replace with deployed Base address
-  const ethContractAddress = "0x0000000000000000000000000000000000000000"; // Replace with deployed Ethereum address
+  const amoyContractAddress = "0x0000000000000000000000000000000000000000"; // Replace with deployed Amoy address
 
   if (baseContractAddress !== "0x0000000000000000000000000000000000000000") {
     await deployedToken.setPeer(
@@ -49,17 +49,20 @@ async function main() {
     console.log("Base Sepolia peer set.");
   }
 
-  if (ethContractAddress !== "0x0000000000000000000000000000000000000000") {
+  if (amoyContractAddress !== "0x0000000000000000000000000000000000000000") {
     await deployedToken.setPeer(
-      ethEndpointId,
-      ethers.utils.zeroPadValue(ethers.utils.getAddress(ethContractAddress), 32)
+      amoyEndpointId,
+      ethers.utils.zeroPadValue(
+        ethers.utils.getAddress(amoyContractAddress),
+        32
+      )
     );
-    console.log("Ethereum Sepolia peer set.");
+    console.log("Polygon Amoy peer set.");
   }
 
   if (network.name !== "hardhat" && network.name !== "localhost") {
     console.log("Verifying contract...");
-    await verify(deployedToken.address, args);
+    await verifyContract(deployedToken.address, args);
     console.log("Contract verified");
   }
 }

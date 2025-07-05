@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {OApp, Origin, MessagingFee} from "@layerzerolabs/oapp-evm/contracts/oapp/OApp.sol";
-import {OAppOptionsType3} from "@layerzerolabs/oapp-evm/contracts/oapp/libs/OAppOptionsType3.sol";
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import { OFT } from "@layerzerolabs/oft-evm/contracts/OFT.sol";
+import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
+import { MessagingFee, Origin } from "@layerzerolabs/oapp-evm/contracts/oapp/OApp.sol";
 
-contract RWAToken is ERC20, OApp {
+contract RWAToken is OFT {
     struct RWAData {
         string description;
         string physicalAddress;
@@ -16,6 +16,7 @@ contract RWAToken is ERC20, OApp {
         uint256 locationScore;
         uint256 highestBid;
         uint256 highestBidTimestamp;
+        uint256 highestBidChain;    // Chain ID where highest bid was placed
         uint256 lastBid;
         uint256 lastBidTimestamp;
     }
@@ -24,10 +25,22 @@ contract RWAToken is ERC20, OApp {
     address public riskScoreUpdater;
 
     uint256 public constant TOTAL_SUPPLY = 1_000_000 * 10 ** 18;
+    
+    // Chain identifiers for data updates
+    uint256 public constant BASE_SEPOLIA_CHAIN_ID = 84532;
+    uint256 public immutable CHAIN_ID;
 
-    // Placeholders for LayerZero
-    uint32 public constant DST_EID = 80002; // Polygon Amoy
-    address public peer;
+    // Events
+    event ValuationUpdated(uint256 newValuation, uint256 timestamp);
+    event RiskScoreUpdated(uint256 newRiskScore);
+    event LocationScoreUpdated(uint256 newLocationScore);
+    event BidPlaced(address bidder, uint256 amount, uint256 timestamp, uint256 chainId);
+    event CrossChainDataReceived(string dataType, uint256 value, uint32 srcEid);
+
+    modifier onlyBaseSepolia() {
+        require(block.chainid == BASE_SEPOLIA_CHAIN_ID, "Only callable from Base Sepolia");
+        _;
+    }
 
     constructor(
         string memory name,
@@ -39,13 +52,14 @@ contract RWAToken is ERC20, OApp {
         uint256 riskScoreValue,
         uint256 locationScoreValue,
         address riskScoreUpdaterAddress,
-        address _endpoint,
+        address _lzEndpoint,
         address _owner
-    ) ERC20(name, symbol) OApp(_endpoint, _owner) {
+    ) OFT(name, symbol, _lzEndpoint, _owner) Ownable() {
         require(riskScoreValue <= 100, "Score cannot exceed 100");
         require(locationScoreValue <= 100, "Score cannot exceed 100");
         _mint(msg.sender, TOTAL_SUPPLY);
         riskScoreUpdater = riskScoreUpdaterAddress;
+        CHAIN_ID = block.chainid;
         rwaData = RWAData({
             description: description,
             physicalAddress: physicalAddressValue,
@@ -56,61 +70,47 @@ contract RWAToken is ERC20, OApp {
             locationScore: locationScoreValue,
             highestBid: 0,
             highestBidTimestamp: 0,
+            highestBidChain: 0,
             lastBid: 0,
             lastBidTimestamp: 0
         });
     }
 
-    function setPeer(address _peer) public onlyOwner {
-        peer = _peer;
-    }
-
-    function _lzSend(bytes memory _message) internal {
-        require(peer != address(0), "Peer not set");
-
-        MessagingFee memory fee =_quote(DST_EID, _message, bytes(""), false);
-        _lzSend(DST_EID, _message, bytes(""), fee, payable(msg.sender));
-    }
-
-    function updateValuation(uint256 newValuation) public onlyOwner {
+    // Unidirectional Updates (Base Sepolia → Other Chains)
+    function updateValuation(uint256 newValuation) public onlyBaseSepolia {
         rwaData.valuation = newValuation;
         rwaData.valuationDate = block.timestamp;
+        
+        emit ValuationUpdated(newValuation, block.timestamp);
+        
+        // Send cross-chain message to all other chains
         bytes memory message = abi.encode("updateValuation", newValuation);
-        _lzSend(message);
+        _broadcastMessage(message);
     }
 
-    function updateRiskScore(uint256 newRiskScore) public {
-        require(
-            msg.sender == riskScoreUpdater,
-            "Only risk score updater can call this function"
-        );
+    function updateRiskScore(uint256 newRiskScore) public onlyBaseSepolia {
         require(newRiskScore <= 100, "Score cannot exceed 100");
         rwaData.riskScore = newRiskScore;
+        
+        emit RiskScoreUpdated(newRiskScore);
+        
+        // Send cross-chain message to all other chains
         bytes memory message = abi.encode("updateRiskScore", newRiskScore);
-        _lzSend(message);
+        _broadcastMessage(message);
     }
 
-    function updateLocationScore(uint256 newLocationScore) public onlyOwner {
+    function updateLocationScore(uint256 newLocationScore) public onlyBaseSepolia {
         require(newLocationScore <= 100, "Score cannot exceed 100");
         rwaData.locationScore = newLocationScore;
+        
+        emit LocationScoreUpdated(newLocationScore);
+        
+        // Send cross-chain message to all other chains
         bytes memory message = abi.encode("updateLocationScore", newLocationScore);
-        _lzSend(message);
+        _broadcastMessage(message);
     }
 
-    function updateHighestBid(uint256 newHighestBid) public onlyOwner {
-        rwaData.highestBid = newHighestBid;
-        rwaData.highestBidTimestamp = block.timestamp;
-        bytes memory message = abi.encode("updateHighestBid", newHighestBid);
-        _lzSend(message);
-    }
-
-    function updateLastBid(uint256 newLastBid) public onlyOwner {
-        rwaData.lastBid = newLastBid;
-        rwaData.lastBidTimestamp = block.timestamp;
-        bytes memory message = abi.encode("updateLastBid", newLastBid);
-        _lzSend(message);
-    }
-
+    // Bidirectional Updates (Any Chain ↔ All Chains)
     function bid() public payable {
         rwaData.lastBid = msg.value;
         rwaData.lastBidTimestamp = block.timestamp;
@@ -118,50 +118,116 @@ contract RWAToken is ERC20, OApp {
         if (msg.value > rwaData.highestBid) {
             rwaData.highestBid = msg.value;
             rwaData.highestBidTimestamp = block.timestamp;
+            rwaData.highestBidChain = CHAIN_ID;
         }
 
+        emit BidPlaced(msg.sender, msg.value, block.timestamp, CHAIN_ID);
+
+        // Send bid updates to all peer chains
         bytes memory message = abi.encode(
             "updateBids",
             rwaData.lastBid,
             rwaData.lastBidTimestamp,
             rwaData.highestBid,
-            rwaData.highestBidTimestamp
+            rwaData.highestBidTimestamp,
+            rwaData.highestBidChain
         );
-        _lzSend(message);
+        _broadcastMessage(message);
     }
 
-    function updateBids(
-        uint256 newLastBid,
-        uint256 newLastBidTimestamp,
-        uint256 newHighestBid,
-        uint256 newHighestBidTimestamp
-    ) public {
-        rwaData.lastBid = newLastBid;
-        rwaData.lastBidTimestamp = newLastBidTimestamp;
-        rwaData.highestBid = newHighestBid;
-        rwaData.highestBidTimestamp = newHighestBidTimestamp;
+    function _broadcastMessage(bytes memory _message) internal {
+        // Get all configured peers and send message to each
+        uint32[] memory eids = new uint32[](3);
+        eids[0] = 40245; // Base Sepolia
+        eids[1] = 40267; // Polygon Amoy  
+        eids[2] = 40161; // Ethereum Sepolia
+        
+        for (uint i = 0; i < eids.length; i++) {
+            // Skip sending to self
+            if (_isCurrentChain(eids[i])) continue;
+            
+            if (peers[eids[i]] != bytes32(0)) {
+                try this._sendMessage(eids[i], _message) {
+                    // Message sent successfully
+                } catch {
+                    // Silently fail to prevent reverting the main operation
+                    // In production, consider logging or retrying failed messages
+                }
+            }
+        }
+    }
+
+    function _sendMessage(uint32 _dstEid, bytes memory _message) external {
+        require(msg.sender == address(this), "Internal only");
+        bytes memory options = abi.encodePacked(uint16(1), uint128(80000)); // Basic gas option
+        MessagingFee memory fee = _quote(_dstEid, _message, options, false);
+        _lzSend(_dstEid, _message, options, fee, payable(address(this)));
+    }
+
+    function _isCurrentChain(uint32 _eid) internal view returns (bool) {
+        if (_eid == 40245 && CHAIN_ID == 84532) return true;  // Base Sepolia
+        if (_eid == 40267 && CHAIN_ID == 80002) return true;  // Polygon Amoy
+        if (_eid == 40161 && CHAIN_ID == 11155111) return true; // Ethereum Sepolia
+        return false;
     }
 
     function _lzReceive(
-        Origin calldata,
+        Origin calldata _origin,
         bytes32,
         bytes calldata _message,
         address,
         bytes calldata
     ) internal override {
-        (
-            string memory functionSig,
-            uint256 p1,
-            uint256 p2,
-            uint256 p3,
-            uint256 p4
-        ) = abi.decode(
-                _message,
-                (string, uint256, uint256, uint256, uint256)
-            );
+        require(peers[_origin.srcEid] == _origin.sender, "OApp: peer not set");
+        (string memory functionSig, ) = abi.decode(_message, (string, bytes));
 
-        if (keccak256(bytes(functionSig)) == keccak256(bytes("updateBids"))) {
-            updateBids(p1, p2, p3, p4);
+        emit CrossChainDataReceived(functionSig, 0, _origin.srcEid);
+
+        if (keccak256(bytes(functionSig)) == keccak256(bytes("updateValuation"))) {
+            (, uint256 value) = abi.decode(_message, (string, uint256));
+            // Only update local data, don't send cross-chain message back
+            rwaData.valuation = value;
+            rwaData.valuationDate = block.timestamp;
+            emit ValuationUpdated(value, block.timestamp);
+            
+        } else if (keccak256(bytes(functionSig)) == keccak256(bytes("updateRiskScore"))) {
+            (, uint256 value) = abi.decode(_message, (string, uint256));
+            require(value <= 100, "Score cannot exceed 100");
+            // Only update local data, don't send cross-chain message back
+            rwaData.riskScore = value;
+            emit RiskScoreUpdated(value);
+            
+        } else if (keccak256(bytes(functionSig)) == keccak256(bytes("updateLocationScore"))) {
+            (, uint256 value) = abi.decode(_message, (string, uint256));
+            require(value <= 100, "Score cannot exceed 100");
+            // Only update local data, don't send cross-chain message back
+            rwaData.locationScore = value;
+            emit LocationScoreUpdated(value);
+            
+        } else if (keccak256(bytes(functionSig)) == keccak256(bytes("updateBids"))) {
+            (, uint256 p1, uint256 p2, uint256 p3, uint256 p4, uint256 p5) = abi.decode(
+                _message,
+                (string, uint256, uint256, uint256, uint256, uint256)
+            );
+            // Only update local data, don't send cross-chain message back
+            rwaData.lastBid = p1;
+            rwaData.lastBidTimestamp = p2;
+            rwaData.highestBid = p3;
+            rwaData.highestBidTimestamp = p4;
+            rwaData.highestBidChain = p5;
         }
+    }
+
+    // View functions
+    function getRWAData() external view returns (RWAData memory) {
+        return rwaData;
+    }
+
+    function getHighestBidInfo() external view returns (uint256 amount, uint256 timestamp, uint256 chainId) {
+        return (rwaData.highestBid, rwaData.highestBidTimestamp, rwaData.highestBidChain);
+    }
+
+    function getLastBidInfo() external view returns (uint256 amount, uint256 timestamp) {
+        return (rwaData.lastBid, rwaData.lastBidTimestamp);
     }
 } 

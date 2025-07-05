@@ -1,46 +1,72 @@
 // import {verify} from "./verify/contract";
 
-import { BASE_SEPOLIA_ENDPOINT } from "../constants";
-import { verifyContract as verify } from "./verify/contract";
-
 const { ethers, network } = require("hardhat");
+import { base, propertyData } from "../constants";
+import { verifyContract } from "./verify/contract";
 
-(async () => {
-  async function main() {
-    const contractName = "RWAToken";
+async function main() {
+  console.log(`Deploying RWAToken to ${network.name}`);
 
-    const endpointV2Address = BASE_SEPOLIA_ENDPOINT; // Base Sepolia
-    const owner = (await ethers.getSigners())[0].address;
+  const signers = await ethers.getSigners();
+  const owner = signers[0].address;
 
-    const args = [
-      "RWAToken", // name
-      "RWA", // symbol
-      "Real World Asset Token", // description
-      "123 Main St", // physicalAddressValue
-      1000000, // valuationValue
-      100, // squareMetersValue
-      10, // riskScoreValue
-      10, // locationScoreValue
-      owner, // riskScoreUpdaterAddress
-      endpointV2Address, // endpoint
-      owner, // owner
-    ];
+  const args = [
+    "RWAToken",
+    "RWA",
+    "Real World Asset backed Token",
+    propertyData.address,
+    propertyData.valuation_usd,
+    propertyData.size_sqm,
+    propertyData.default_risk_score,
+    propertyData.location_score,
+    owner,
+    ethers.utils.getAddress(base.endpoint),
+    owner,
+  ];
 
-    const rwaToken = await ethers.deployContract(contractName, args);
+  const rwaToken = await ethers.getContractFactory("RWAToken");
+  const deployedToken = await rwaToken.deploy(...args);
+  await deployedToken.deployed();
 
-    await rwaToken.waitForDeployment();
+  console.log(`RWAToken deployed to: ${deployedToken.address}`);
 
-    console.log(`${contractName} deployed to ${rwaToken.target}`);
+  console.log("Setting peers...");
 
-    if (network.name !== "hardhat" && network.name !== "localhost") {
-      console.log("Verifying contract...");
-      await verify(rwaToken.target, args);
-      console.log("Contract verified");
-    }
+  // Set peers for both Polygon Amoy and Ethereum Sepolia
+  const amoyEndpointId = 40267; // Polygon Amoy
+  const ethEndpointId = 40161; // Ethereum Sepolia
+
+  // Note: Replace these addresses with actual deployed contract addresses
+  const amoyContractAddress = "0x0000000000000000000000000000000000000000"; // Replace with deployed Amoy address
+  const ethContractAddress = "0x0000000000000000000000000000000000000000"; // Replace with deployed Ethereum address
+
+  if (amoyContractAddress !== "0x0000000000000000000000000000000000000000") {
+    await deployedToken.setPeer(
+      amoyEndpointId,
+      ethers.utils.zeroPadValue(
+        ethers.utils.getAddress(amoyContractAddress),
+        32
+      )
+    );
+    console.log("Polygon Amoy peer set.");
   }
 
-  main().catch((error) => {
-    console.error(error);
-    process.exitCode = 1;
-  });
-})();
+  if (ethContractAddress !== "0x0000000000000000000000000000000000000000") {
+    await deployedToken.setPeer(
+      ethEndpointId,
+      ethers.utils.zeroPadValue(ethers.utils.getAddress(ethContractAddress), 32)
+    );
+    console.log("Ethereum Sepolia peer set.");
+  }
+
+  if (network.name !== "hardhat" && network.name !== "localhost") {
+    console.log("Verifying contract...");
+    await verifyContract(deployedToken.address, args);
+    console.log("Contract verified");
+  }
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
