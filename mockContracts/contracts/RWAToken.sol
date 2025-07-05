@@ -35,6 +35,8 @@ contract RWAToken is ERC20, Ownable {
         uint256 locationScoreValue,
         address riskScoreUpdaterAddress
     ) ERC20(name, symbol) Ownable(msg.sender) {
+        require(riskScoreValue <= 100, "Score cannot exceed 100");
+        require(locationScoreValue <= 100, "Score cannot exceed 100");
         _mint(msg.sender, TOTAL_SUPPLY);
         riskScoreUpdater = riskScoreUpdaterAddress;
         rwaData = RWAData({
@@ -59,10 +61,12 @@ contract RWAToken is ERC20, Ownable {
 
     function updateRiskScore(uint256 newRiskScore) public {
         require(msg.sender == riskScoreUpdater, "Only risk score updater can call this function");
+        require(newRiskScore <= 100, "Score cannot exceed 100");
         rwaData.riskScore = newRiskScore;
     }
 
     function updateLocationScore(uint256 newLocationScore) public onlyOwner {
+        require(newLocationScore <= 100, "Score cannot exceed 100");
         rwaData.locationScore = newLocationScore;
     }
 
@@ -74,5 +78,15 @@ contract RWAToken is ERC20, Ownable {
     function updateLastBid(uint256 newLastBid) public onlyOwner {
         rwaData.lastBid = newLastBid;
         rwaData.lastBidTimestamp = block.timestamp;
+    }
+
+    function bid() public payable {
+        rwaData.lastBid = msg.value;
+        rwaData.lastBidTimestamp = block.timestamp;
+
+        if (msg.value > rwaData.highestBid) {
+            rwaData.highestBid = msg.value;
+            rwaData.highestBidTimestamp = block.timestamp;
+        }
     }
 }
