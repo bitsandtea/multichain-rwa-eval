@@ -21,8 +21,9 @@ async function main() {
     propertyData.location_score,
     owner,
     ethers.utils.getAddress(base.endpoint),
-    owner,
+    owner, // This is the delegate address
   ];
+  console.log("args are:", args);
 
   const rwaToken = await ethers.getContractFactory("RWAToken");
   const deployedToken = await rwaToken.deploy(...args);
@@ -64,6 +65,21 @@ async function main() {
     await verifyContract(deployedToken.address, args);
     console.log("Contract verified");
   }
+
+  // Fund the contract with 0.001 ETH for cross-chain messaging fees
+  console.log("Funding contract with 0.001 ETH for messaging fees...");
+  const fundingAmount = ethers.utils.parseEther("0.001");
+
+  const fundingTx = await signers[0].sendTransaction({
+    to: deployedToken.address,
+    value: fundingAmount,
+  });
+
+  await fundingTx.wait();
+  console.log(
+    `Contract funded with ${ethers.utils.formatEther(fundingAmount)} ETH`
+  );
+  console.log(`Funding transaction: ${fundingTx.hash}`);
 }
 
 main().catch((error) => {

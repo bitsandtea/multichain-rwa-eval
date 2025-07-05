@@ -38,8 +38,8 @@ const config = {
       url: `https://base-sepolia.infura.io/v3/${process.env.INFURA_KEY}`,
       chainId: 84532,
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
-      timeout: 60000,
-      gasPrice: 1000000000,
+      // timeout: 60000,
+      // gasPrice: 1000000000,
     },
     ethSepolia: {
       eid: EndpointId.SEPOLIA_V2_TESTNET,

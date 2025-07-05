@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import { OFT } from "@layerzerolabs/oft-evm/contracts/OFT.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { MessagingFee, Origin } from "@layerzerolabs/oapp-evm/contracts/oapp/OApp.sol";
+import { OptionsBuilder } from "@layerzerolabs/oapp-evm/contracts/oapp/libs/OptionsBuilder.sol";
 
 contract RWAToken is OFT {
     struct RWAData {
@@ -159,8 +160,13 @@ contract RWAToken is OFT {
 
     function _sendMessage(uint32 _dstEid, bytes memory _message) external {
         require(msg.sender == address(this), "Internal only");
-        bytes memory options = abi.encodePacked(uint16(1), uint128(80000)); // Basic gas option
+        bytes memory options = OptionsBuilder.addExecutorLzReceiveOption(
+            OptionsBuilder.newOptions(),
+            uint128(80000),
+            uint128(0)
+        );
         MessagingFee memory fee = _quote(_dstEid, _message, options, false);
+        require(address(this).balance >= fee.nativeFee, "Insufficient contract balance for fees");
         _lzSend(_dstEid, _message, options, fee, payable(address(this)));
     }
 
@@ -218,6 +224,63 @@ contract RWAToken is OFT {
         }
     }
 
+    // Contract funding functions
+    event FundsDeposited(address indexed depositor, uint256 amount);
+    event FundsWithdrawn(address indexed owner, uint256 amount);
+
+    function depositFunds() external payable {
+        require(msg.value > 0, "Must send some funds");
+        emit FundsDeposited(msg.sender, msg.value);
+    }
+
+    // Allow direct funding of the contract
+    receive() external payable {
+        if (msg.value > 0) {
+            emit FundsDeposited(msg.sender, msg.value);
+        }
+    }
+
+    function withdrawFunds(uint256 amount) external onlyOwner {
+        require(amount <= address(this).balance, "Insufficient contract balance");
+        payable(owner()).transfer(amount);
+        emit FundsWithdrawn(msg.sender, amount);
+    }
+
+    function getContractBalance() external view returns (uint256) {
+        return address(this).balance;
+    }
+
+    // Fee estimation functions
+    function estimateBroadcastFee(bytes memory _message) public view returns (uint256 totalFee) {
+        uint32[] memory eids = new uint32[](3);
+        eids[0] = 40245; // Base Sepolia
+        eids[1] = 40267; // Polygon Amoy  
+        eids[2] = 40161; // Ethereum Sepolia
+        
+        bytes memory options = OptionsBuilder.addExecutorLzReceiveOption(
+            OptionsBuilder.newOptions(),
+            uint128(80000),
+            uint128(0)
+        );
+        
+        for (uint i = 0; i < eids.length; i++) {
+            if (!_isCurrentChain(eids[i]) && peers[eids[i]] != bytes32(0)) {
+                MessagingFee memory fee = _quote(eids[i], _message, options, false);
+                totalFee += fee.nativeFee;
+            }
+        }
+    }
+
+    function estimateUpdateFee() external view returns (uint256) {
+        bytes memory message = abi.encode("updateValuation", uint256(0));
+        return estimateBroadcastFee(message);
+    }
+
+    function estimateBidFee() external view returns (uint256) {
+        bytes memory message = abi.encode("updateBids", uint256(0), uint256(0), uint256(0), uint256(0), uint256(0));
+        return estimateBroadcastFee(message);
+    }
+
     // View functions
     function getRWAData() external view returns (RWAData memory) {
         return rwaData;
@@ -230,4 +293,9 @@ contract RWAToken is OFT {
     function getLastBidInfo() external view returns (uint256 amount, uint256 timestamp) {
         return (rwaData.lastBid, rwaData.lastBidTimestamp);
     }
-} 
+
+    function _payNative(uint256 _nativeFee) internal override returns (uint256 nativeFee) {
+        require(address(this).balance >= _nativeFee, "Insufficient contract balance for native fee");
+        return _nativeFee;
+    }
+}
