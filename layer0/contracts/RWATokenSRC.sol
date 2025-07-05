@@ -34,7 +34,7 @@ contract RWAToken is ERC20, Ownable {
         uint256 riskScoreValue,
         uint256 locationScoreValue,
         address riskScoreUpdaterAddress
-    ) ERC20(name, symbol) Ownable(msg.sender) {
+    ) ERC20(name, symbol) Ownable() {
         _mint(msg.sender, TOTAL_SUPPLY);
         riskScoreUpdater = riskScoreUpdaterAddress;
         rwaData = RWAData({
