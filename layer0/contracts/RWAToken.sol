@@ -162,7 +162,7 @@ contract RWAToken is OFT {
         require(msg.sender == address(this), "Internal only");
         bytes memory options = OptionsBuilder.addExecutorLzReceiveOption(
             OptionsBuilder.newOptions(),
-            uint128(80000),
+            uint128(150_000),
             uint128(0)
         );
         MessagingFee memory fee = _quote(_dstEid, _message, options, false);
@@ -185,7 +185,7 @@ contract RWAToken is OFT {
         bytes calldata
     ) internal override {
         require(peers[_origin.srcEid] == _origin.sender, "OApp: peer not set");
-        (string memory functionSig, ) = abi.decode(_message, (string, bytes));
+        string memory functionSig = abi.decode(_message, (string));
 
         emit CrossChainDataReceived(functionSig, 0, _origin.srcEid);
 
@@ -259,7 +259,7 @@ contract RWAToken is OFT {
         
         bytes memory options = OptionsBuilder.addExecutorLzReceiveOption(
             OptionsBuilder.newOptions(),
-            uint128(80000),
+            uint128(150_000),
             uint128(0)
         );
         

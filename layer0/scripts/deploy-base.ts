@@ -66,9 +66,9 @@ async function main() {
     console.log("Contract verified");
   }
 
-  // Fund the contract with 0.001 ETH for cross-chain messaging fees
-  console.log("Funding contract with 0.001 ETH for messaging fees...");
-  const fundingAmount = ethers.utils.parseEther("0.001");
+  // Fund the contract with 0.03 ETH for cross-chain messaging fees
+  console.log("Funding contract with 0.03 ETH for messaging fees...");
+  const fundingAmount = ethers.utils.parseEther("0.03");
 
   const fundingTx = await signers[0].sendTransaction({
     to: deployedToken.address,

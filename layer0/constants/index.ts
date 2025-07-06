@@ -1,19 +1,19 @@
 export const amoy = {
   eid: 40267,
   endpoint: "0x6EDCE65403992e310A62460808c4b910D972f10f",
-  rwaToken: "",
+  rwaToken: "0x7B79861D0C7092C2FD4831F3a5baA299a219df51",
 };
 
 export const base = {
   eid: 40245,
-  endpoint: "0xe2cA39d90e0094E5910dA006c168a785B3aEa02C",
-  rwaToken: "",
+  endpoint: "0x6EDCE65403992e310A62460808c4b910D972f10f",
+  rwaToken: "0x4Fea3A6A4CBaCBc848065D18F04B9524d635e1e4",
 };
 
 export const ethSepolia = {
   eid: 40161,
   endpoint: "0x6EDCE65403992e310A62460808c4b910D972f10f",
-  rwaToken: "",
+  rwaToken: "0xd3042a0244dD3428F6B327b9C245D24AF0024bd8",
 };
 
 export const propertyData = {

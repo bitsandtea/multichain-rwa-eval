@@ -45,7 +45,7 @@ async function main() {
   console.log("");
 
   // Update risk score on Base Sepolia (only Base can initiate updates)
-  const newRiskScore = 85;
+  const newRiskScore = 32;
   console.log(`🚀 Updating risk score to ${newRiskScore} on Base Sepolia...`);
 
   // Estimate fee for the update
@@ -67,7 +67,9 @@ async function main() {
   }
 
   // Update risk score
-  const updateTx = await baseContract.updateRiskScore(newRiskScore);
+  const updateTx = await baseContract.updateRiskScore(newRiskScore, {
+    gasLimit: 1_000_000, // ensure sufficient gas for LayerZero Endpoint bookkeeping on Ethereum Sepolia
+  });
   console.log(`Update transaction: ${updateTx.hash}`);
   await updateTx.wait();
   console.log("✅ Risk score updated on Base Sepolia\n");

@@ -35,11 +35,13 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
+    "@layerzerolabs/lz-evm-messagelib-v2": "^3.0.110",
     "@layerzerolabs/lz-evm-protocol-v2": "^3.0.110",
     "@layerzerolabs/oapp-evm": "^0.3.2",
     "@layerzerolabs/oft-evm": "^3.1.4",
     "@openzeppelin/contracts": "^4.9.6",
     "@openzeppelin/contracts-upgradeable": "^4.9.6",
-    "openzeppelin": "^1.0.0"
+    "openzeppelin": "^1.0.0",
+    "solidity-bytes-utils": "^0.8.4"
   }
 }
