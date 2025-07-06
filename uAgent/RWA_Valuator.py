@@ -5,6 +5,8 @@ import os
 from dotenv import load_dotenv
 import requests
 import json
+import time
+from web3 import Web3
 
 # Load environment variables
 load_dotenv()
@@ -19,11 +21,12 @@ agent = Agent(
 
 # Target property for evaluation
 TARGET_PROPERTY = {
-    "property_id": "PROP001",
-    "address": "1124 Pacific Ave, San Francisco, CA 94133",
-    "valuation_usd": 1850000,
-    "size_sqm": 190,
-    "default_risk_score": 0.12
+  "property_id": "PROP001",
+  "address": "7849 S Drexel Ave, Chicago, IL 60619",
+  "valuation_usd": 290000,
+  "size_sqm": 135,
+  "default_risk_score": 75,
+  "location_score": 80,
 }
 
 # Real Estate Expert Prompt
@@ -42,13 +45,14 @@ You will be provided with:
 3. **Rentcast Data** – Rental market analysis, rental comps, rental yield potential, and tenant demand metrics
 
 Your task:
-Analyze the provided data and generate an updated property valuation and default risk score based on your expert assessment.
+Analyze the provided data and generate an updated property valuation, default risk score, and location score.
 
 Instructions:
-- Return a **JSON object only** containing the updated property information
-- `valuation_usd`: Your expert valuation based on all available data (integer)
-- `default_risk_score`: Risk assessment from 0.0 (lowest risk) to 1.0 (highest risk) with 2 decimal precision
-- Consider market conditions, comparable properties, rental potential, location factors, and any risk indicators
+- Return a **JSON object only** containing the updated property information.
+- `valuation_usd`: Your expert valuation based on all available data (integer).
+- `default_risk_score`: Risk assessment from 0 (lowest risk) to 100 (highest risk). Integer only.
+- `location_score`: Location assessment from 0 (worst) to 100 (best). Integer only.
+- Consider market conditions, comparable properties, rental potential, location factors, and any risk indicators.
 - **Do not include explanations, reasoning, or any text outside of the JSON object.**
 
 ---
@@ -72,7 +76,8 @@ Return a single valid JSON object like below:
   "address": "1124 Pacific Ave, San Francisco, CA 94133",
   "valuation_usd": 1950000,
   "size_sqm": 190,
-  "default_risk_score": 0.08
+  "default_risk_score": 34,
+  "location_score": 88
 }}
 ```
 """
@@ -265,6 +270,26 @@ async def fetch_rentcast_data(ctx: Context, address: str):
 async def analyze_property_with_as1(ctx: Context, property_info, zillow_data, rentcast_data):
     """Analyze the property data using AS1 API"""
     ctx.logger.info("🧠 Starting AS1 property analysis...")
+    
+    # Mock analysis result
+    ctx.logger.info("🤖 Using mock analysis result for development")
+    
+    # # Simulate processing time
+    # await asyncio.sleep(2)
+    
+    # fake_result = {
+    #     "property_id": "PROP001",
+    #     "address": TARGET_PROPERTY["address"],
+    #     "valuation_usd": 315000,
+    #     "size_sqm": TARGET_PROPERTY["size_sqm"],
+    #     "default_risk_score": 42,
+    #     "location_score": 85
+    # }
+    
+    # ctx.logger.info(f"✅ Mock analysis complete: {fake_result}")
+    # return fake_result
+    
+
     try:
         # Get AS1 API key from environment
         as1_api_key = os.getenv("ASI_ONE_API_KEY")
@@ -288,6 +313,7 @@ async def analyze_property_with_as1(ctx: Context, property_info, zillow_data, re
         # Prepare AS1 API request
         url = "https://api.asi1.ai/v1/chat/completions"
         
+        #we need to get, and then sign a tx to update the base with the following data: updateLocationStore, updateRiskScore, updateValuation
         payload = {
             "model": "asi1-mini",
             "messages": [
@@ -302,7 +328,7 @@ async def analyze_property_with_as1(ctx: Context, property_info, zillow_data, re
             ],
             "temperature": 0.3,
             "stream": False,
-            "max_tokens": 1000
+            "max_tokens": 2000
         }
         
         headers = {
@@ -366,6 +392,118 @@ async def analyze_property_with_as1(ctx: Context, property_info, zillow_data, re
         ctx.logger.error(f"💥 Error calling AS1 API: {str(e)}")
         ctx.logger.error(f"🔍 Exception type: {type(e).__name__}")
         return None
+
+
+# Function to update on-chain data on Base Sepolia
+def update_on_chain_data(ctx: Context, analysis_result):
+    """Updates valuation and risk scores on the Base Sepolia smart contract."""
+    ctx.logger.info("⛓️ ========================================")
+    ctx.logger.info("⚡️ STARTING ON-CHAIN DATA UPDATE")
+    ctx.logger.info("⛓️ ========================================")
+
+    try:
+        # --- 1. Setup Web3 Connection ---
+        infura_key = os.getenv("INFURA_KEY")
+        private_key = os.getenv("PRIVATE_KEY")
+
+        if not infura_key or not private_key:
+            ctx.logger.error("❌ INFURA_KEY or PRIVATE_KEY not found in .env file")
+            return
+
+        rpc_url = f"https://base-sepolia.infura.io/v3/{infura_key}"
+        w3 = Web3(Web3.HTTPProvider(rpc_url))
+
+        if not w3.is_connected():
+            ctx.logger.error("❌ Failed to connect to Base Sepolia network")
+            return
+
+        ctx.logger.info(f"✅ Connected to Base Sepolia (Chain ID: {w3.eth.chain_id})")
+
+        # --- 2. Load Contract ---
+        contract_address = "0x4Fea3A6A4CBaCBc848065D18F04B9524d635e1e4" # From constants
+        
+        # Load ABI from file
+        try:
+            with open("../layer0/deployments/baseSepolia/RWAToken.json") as f:
+                contract_json = json.load(f)
+                contract_abi = contract_json['abi']
+        except FileNotFoundError:
+            ctx.logger.error("❌ RWAToken.json ABI file not found. Make sure the path is correct.")
+            return
+            
+        contract = w3.eth.contract(address=contract_address, abi=contract_abi)
+        ctx.logger.info(f"✅ Contract loaded at address: {contract_address}")
+        
+        # --- 3. Prepare and Send Transactions ---
+        account = w3.eth.account.from_key(private_key)
+        wallet_address = account.address
+        ctx.logger.info(f"🔑 Using wallet address: {wallet_address}")
+
+        # Get chain ID for replay protection
+        chain_id = w3.eth.chain_id
+
+        # Nonce management
+        nonce = w3.eth.get_transaction_count(wallet_address)
+        ctx.logger.info(f"📄 Initial nonce: {nonce}")
+
+        # New values from analysis
+        new_valuation = int(analysis_result['valuation_usd'])
+        new_risk_score = int(analysis_result['default_risk_score']) # Score is already 0-100
+        new_location_score = int(analysis_result['location_score'])
+
+        # --- Transaction 1: Update Valuation ---
+        ctx.logger.info(f"🚀 Preparing to update valuation to ${new_valuation:,}")
+        tx_valuation = contract.functions.updateValuation(new_valuation).build_transaction({
+            'from': wallet_address,
+            'nonce': nonce,
+            'gas': 1_000_000,
+            'gasPrice': w3.eth.gas_price,
+            'chainId': chain_id
+        })
+        signed_tx_valuation = w3.eth.account.sign_transaction(tx_valuation, private_key)
+        tx_hash_valuation = w3.eth.send_raw_transaction(signed_tx_valuation.raw_transaction)
+        ctx.logger.info(f"✅ Valuation update transaction sent: {tx_hash_valuation.hex()}")
+        w3.eth.wait_for_transaction_receipt(tx_hash_valuation)
+        ctx.logger.info(f"🎉 Valuation update confirmed!")
+        nonce += 1 # Increment nonce for next tx
+
+        # --- Transaction 2: Update Risk Score ---
+        ctx.logger.info(f"🚀 Preparing to update risk score to {new_risk_score}")
+        tx_risk = contract.functions.updateRiskScore(new_risk_score).build_transaction({
+            'from': wallet_address,
+            'nonce': nonce,
+            'gas': 1_000_000,
+            'gasPrice': w3.eth.gas_price,
+            'chainId': chain_id
+        })
+        signed_tx_risk = w3.eth.account.sign_transaction(tx_risk, private_key)
+        tx_hash_risk = w3.eth.send_raw_transaction(signed_tx_risk.raw_transaction)
+        ctx.logger.info(f"✅ Risk score update transaction sent: {tx_hash_risk.hex()}")
+        w3.eth.wait_for_transaction_receipt(tx_hash_risk)
+        ctx.logger.info(f"🎉 Risk score update confirmed!")
+        nonce += 1 # Increment nonce
+
+        # --- Transaction 3: Update Location Score ---
+        ctx.logger.info(f"🚀 Preparing to update location score to {new_location_score}")
+        tx_location = contract.functions.updateLocationScore(new_location_score).build_transaction({
+            'from': wallet_address,
+            'nonce': nonce,
+            'gas': 1_000_000,
+            'gasPrice': w3.eth.gas_price,
+            'chainId': chain_id
+        })
+        signed_tx_location = w3.eth.account.sign_transaction(tx_location, private_key)
+        tx_hash_location = w3.eth.send_raw_transaction(signed_tx_location.raw_transaction)
+        ctx.logger.info(f"✅ Location score update transaction sent: {tx_hash_location.hex()}")
+        w3.eth.wait_for_transaction_receipt(tx_hash_location)
+        ctx.logger.info(f"🎉 Location score update confirmed!")
+
+        ctx.logger.info("✅ All on-chain data updates completed successfully!")
+
+    except Exception as e:
+        ctx.logger.error(f"💥 An error occurred during the on-chain update: {str(e)}")
+        ctx.logger.error(f"🔍 Exception type: {type(e).__name__}")
+        # Consider adding more detailed error handling here
 
 # startup handler
 @agent.on_event("startup")
@@ -464,6 +602,9 @@ async def startup_function(ctx: Context):
                 ctx.logger.info(f"💰 Valuation Change: ${val_change:,} ({val_change_pct:+.2f}%)")
                 ctx.logger.info(f"⚠️ Risk Score Change: {risk_change:+.3f}")
                 
+                # Update on-chain data
+                update_on_chain_data(ctx, analysis_result)
+
                 ctx.logger.info("🎊 ========================================")
                 ctx.logger.info("✅ ANALYSIS COMPLETE - AGENT READY")
                 ctx.logger.info("🎊 ========================================")
