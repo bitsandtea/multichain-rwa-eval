@@ -16,6 +16,7 @@ agent = Agent(
     name="RWA_Valuator_Agent",
     seed="rwa_real_estate_valuator_seed",
     port=8000,
+mailbox=True,
     endpoint=["http://localhost:8000/submit"]
 )
 
@@ -315,7 +316,7 @@ async def analyze_property_with_as1(ctx: Context, property_info, zillow_data, re
         
         #we need to get, and then sign a tx to update the base with the following data: updateLocationStore, updateRiskScore, updateValuation
         payload = {
-            "model": "asi1-mini",
+            "model": "asi1-extended",
             "messages": [
                 {
                     "role": "system",
@@ -328,7 +329,7 @@ async def analyze_property_with_as1(ctx: Context, property_info, zillow_data, re
             ],
             "temperature": 0.3,
             "stream": False,
-            "max_tokens": 2000
+            "max_tokens": 3000
         }
         
         headers = {
@@ -338,7 +339,7 @@ async def analyze_property_with_as1(ctx: Context, property_info, zillow_data, re
         }
         
         ctx.logger.info(f"📡 Making POST request to AS1 API: {url}")
-        ctx.logger.info(f"⚙️ Request settings: temperature=0.3, max_tokens=1000")
+        ctx.logger.info(f"⚙️ Request settings: temperature=0.3, max_tokens=3000")
         ctx.logger.debug(f"📋 Request payload size: {len(json.dumps(payload))} bytes")
         
         # Make AS1 API request
